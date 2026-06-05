@@ -191,12 +191,12 @@ class Auth {
                 }).finish());
             }
 
-            if (!isGmail(email)) {
+            if (!isValidEmail(email)) {
                 return res.status(400).send(ErrorResponse.encode({
                     success: false,
                     error: {
                         code: Constants.EMAIL_NOT_FORMAT,
-                        message: "Not a valid Gmail address"
+                        message: "Not a valid email address" 
                     }
                 }).finish());
             }
@@ -402,7 +402,6 @@ class Auth {
             const { email } = req.decryptedData;
             const currentTime = new Date();
 
-           
             const user = await User.findOneAndUpdate(
                 { email, role: { $in: [0, 1] } },
                 {
@@ -668,7 +667,7 @@ class Auth {
         try {
             logger.warn("=========================================");
             logger.warn("Call setPassWord");
-            const {  password } = req.decryptedData;
+            const { password } = req.decryptedData;
             const user = req.user
             if (!user.verified) {
                 return res.status(403).send(ErrorResponse.encode({
@@ -913,9 +912,11 @@ const setUserData = async (email, data) => {
     await User.updateOne({ email }, { $set: data });
 };
 
-function isGmail(input) {
-    const gmailRegex = /^([a-z0-9_\.-]+)@([\da-z\.-]+)\.([a-z\.]{2,6})$/;
-    return gmailRegex.test(input);
+function isValidEmail(input) {
+    if (!input) return false;
+    const cleanEmail = input.trim();
+    const emailRegex = /^[a-zA-Z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$/;
+    return emailRegex.test(cleanEmail);
 }
 
 const formatUserData = (user, accessToken) => {
