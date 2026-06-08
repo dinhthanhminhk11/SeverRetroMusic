@@ -36,6 +36,7 @@ const userSchema = new mongoose.Schema({
   // 1 : pro
   // 2 : admin
   OTP: { type: String },
+  testOTP: { type: String, select: false },
   OTPCreatedTime: { type: Date },
   OTPAttempts: { type: Number, default: 0 },
   isBlocked: { type: Boolean, default: false },
@@ -48,5 +49,4 @@ const userSchema = new mongoose.Schema({
   followers: [{ type: mongoose.Schema.Types.ObjectId, ref: "User" }],
 }, { timestamps: true })
 module.exports = mongoose.model("User", userSchema);
-
 

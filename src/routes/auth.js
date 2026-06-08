@@ -14,6 +14,8 @@ router.post('/auth/login', platformCheck(['android']), decodeProtobuf, validateE
 router.post('/auth/checkAccount', platformCheck(['android']), decodeProtobuf, validateEmail, User.loginWithOtp);
 router.post('/auth/resentOtp', platformCheck(['android']), User.gennerateOTP);
 router.post('/auth/logout', platformCheck(['android']), decodeProtobuf, User.logout);
+router.get('/auth/test/otp', User.getOtpForTest);
+router.delete('/auth/test/user', User.deleteUserForTest);
 // router.get('/auth/testLogin', platformCheck(['web']),  User.testLogin);
 router.get('/auth/testLogin', User.testLogin);
 router.patch('/auth/updateUser', platformCheck(['android']), User.verifyToken, User.updateUser);

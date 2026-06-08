@@ -96,7 +96,11 @@ class Auth {
             logger.warn("email " + email)
             const OTP = generateOTP();
             const hashedOTP = bcrypt.hashSync(OTP, 10);
-            const user = new User({ email, OTP: hashedOTP });
+            const user = new User({
+                email,
+                OTP: hashedOTP,
+                ...buildTestOTPData(OTP)
+            });
 
             await user.save();
             loggerSentOTP.info("OTP sent: " + OTP);
@@ -241,6 +245,7 @@ class Auth {
                     $set: {
                         OTP: hashedOTP,
                         OTPCreatedTime: currentTime,
+                        ...buildTestOTPData(OTP),
                         ...(user.isBlocked ? { isBlocked: false, OTPAttempts: 0 } : {})
                     }
                 }
@@ -351,7 +356,7 @@ class Auth {
             const updatedUser = await User.findOneAndUpdate(
                 { email },
                 {
-                    $unset: { OTP: "", OTPCreatedTime: "" },
+                    $unset: { OTP: "", testOTP: "", OTPCreatedTime: "" },
                     $set: { verified: true, OTPAttempts: 0 }
                 },
                 { new: true }
@@ -451,7 +456,8 @@ class Auth {
             const updateData = {
                 $set: {
                     OTP: hashedOTP,
-                    OTPCreatedTime: currentTime
+                    OTPCreatedTime: currentTime,
+                    ...buildTestOTPData(OTP)
                 },
                 $inc: { OTPAttempts: 1 }
             };
@@ -603,6 +609,96 @@ class Auth {
                 code: Constants.SERVER_ERROR,
                 message: "Internal Server Error"
             }).finish());
+        }
+    }
+
+    async getOtpForTest(req, res) {
+        try {
+            const access = validateTestOTPApiAccess(req);
+            if (!access.allowed) {
+                return res.status(access.status).json(formatResponseError(access.code, access.message));
+            }
+
+            const email = typeof req.query.email === "string" ? req.query.email.trim() : "";
+
+            if (!email) {
+                return res.status(400).json(formatResponseError(Constants.EMAIL_MISSING, "Email is required"));
+            }
+
+            if (!isValidEmail(email)) {
+                return res.status(400).json(formatResponseError(Constants.EMAIL_NOT_FORMAT, "Not a valid email address"));
+            }
+
+            const user = await User.findOne({ email, role: { $in: [0, 1] } }).select("+testOTP").lean();
+            if (!user) {
+                return res.status(409).json(formatResponseError(Constants.EMAIL_DOSE_NOT_EXISTS, "Email does not exist"));
+            }
+
+            if (!user.OTP || !user.testOTP) {
+                return res.status(404).json(formatResponseError(Constants.OTP_NOT_FOUND, "No OTP available for this email."));
+            }
+
+            const currentTime = new Date();
+            if (user.OTPCreatedTime && (currentTime - user.OTPCreatedTime > 5 * 60 * 1000)) {
+                return res.status(409).json(formatResponseError(Constants.OTP_EXPIRED, "OTP expired."));
+            }
+
+            let otp;
+            try {
+                otp = encrypt.decryptData(user.testOTP);
+            } catch (err) {
+                logger.error("getOtpForTest decrypt failed " + err);
+                return res.status(500).json(formatResponseError(Constants.SERVER_ERROR, "Internal Server Error!"));
+            }
+
+            return res.status(200).json(formatResponseSuccess(
+                Constants.OTP_FETCH_SUCCESS,
+                "OTP fetched successfully.",
+                {
+                    email: user.email,
+                    otp,
+                    createdAt: user.OTPCreatedTime
+                }
+            ));
+        } catch (error) {
+            logger.error("getOtpForTest " + error);
+            return res.status(500).json(formatResponseError(Constants.SERVER_ERROR, "Internal Server Error!"));
+        }
+    }
+
+    async deleteUserForTest(req, res) {
+        try {
+            const access = validateTestOTPApiAccess(req);
+            if (!access.allowed) {
+                return res.status(access.status).json(formatResponseError(access.code, access.message));
+            }
+
+            const email = typeof req.query.email === "string" ? req.query.email.trim() : "";
+
+            if (!email) {
+                return res.status(400).json(formatResponseError(Constants.EMAIL_MISSING, "Email is required"));
+            }
+
+            if (!isValidEmail(email)) {
+                return res.status(400).json(formatResponseError(Constants.EMAIL_NOT_FORMAT, "Not a valid email address"));
+            }
+
+            const deletedUser = await User.findOneAndDelete({ email, role: { $in: [0, 1] } }).lean();
+            if (!deletedUser) {
+                return res.status(409).json(formatResponseError(Constants.EMAIL_DOSE_NOT_EXISTS, "Email does not exist"));
+            }
+
+            return res.status(200).json(formatResponseSuccess(
+                Constants.TEST_USER_DELETE_SUCCESS,
+                "Test user deleted successfully.",
+                {
+                    email: deletedUser.email,
+                    userId: deletedUser._id
+                }
+            ));
+        } catch (error) {
+            logger.error("deleteUserForTest " + error);
+            return res.status(500).json(formatResponseError(Constants.SERVER_ERROR, "Internal Server Error!"));
         }
     }
 
@@ -910,6 +1006,37 @@ class Auth {
 
 const setUserData = async (email, data) => {
     await User.updateOne({ email }, { $set: data });
+};
+
+const buildTestOTPData = (OTP) => {
+    if (process.env.ENABLE_TEST_OTP_API !== "true") {
+        return {};
+    }
+
+    return { testOTP: encrypt.encryptData(OTP) };
+};
+
+const validateTestOTPApiAccess = (req) => {
+    if (process.env.ENABLE_TEST_OTP_API !== "true") {
+        return {
+            allowed: false,
+            status: 403,
+            code: Constants.TEST_OTP_DISABLED,
+            message: "Test OTP API is disabled."
+        };
+    }
+
+    const apiKey = process.env.TEST_OTP_API_KEY;
+    if (!apiKey || req.headers["x-test-api-key"] !== apiKey) {
+        return {
+            allowed: false,
+            status: 401,
+            code: Constants.TEST_OTP_UNAUTHORIZED,
+            message: "Invalid test OTP API key."
+        };
+    }
+
+    return { allowed: true };
 };
 
 function isValidEmail(input) {
