@@ -118,7 +118,8 @@ class SongClass {
                         }
                         const randomHex = stdout.trim();
                         const ipAddress = getIPAddress();
-                        const keyInfoContent = `http://${ipAddress}:3000/audio/${songId}/enc.key\n${encKeyPath}\n${randomHex}`;
+                        const serverPort = process.env.PORT || 8000;
+                        const keyInfoContent = `http://${ipAddress}:${serverPort}/audio/${songId}/enc.key\n${encKeyPath}\n${randomHex}`;
                         fs.writeFileSync(path.join(songDirectory, 'enc.keyinfo'), keyInfoContent);
                         // const filePath = path.join(songDirectory, 'enc.keyinfo');
                         // console.log(filePath);
@@ -211,23 +212,36 @@ class SongClass {
     async checkFile(req, res) {
         try {
             const { fileHash } = req.params;
-            // const fileRecord = await FileModel.findOne({ file_hash: fileHash });
-            if (true) {
-                logger.error(`file not exists: ${fileHash}`)
+            const fileRecord = await FileModel.findOne({ file_hash: fileHash });
+
+            // File đã upload xong và merge hoàn tất
+            if (fileRecord && fileRecord.status === "completed") {
+                logger.info(`File exists: ${fileRecord.path}`);
+                return res.json({
+                    exists: true,
+                    code: "FILE_EXISTS",
+                    filePath: fileRecord.path,
+                    fileName: fileRecord.file_name
+                });
+            }
+
+            const chunkFolder = path.join(chunksDir, fileHash);
+            let uploadedChunks = [];
+            if (fs.existsSync(chunkFolder)) {
+                uploadedChunks = fs.readdirSync(chunkFolder)
+                    .filter(name => name.startsWith("chunk_"))
+                    .map(name => parseInt(name.replace("chunk_", ""), 10))
+                    .filter(n => !Number.isNaN(n))
+                    .sort((a, b) => a - b);
+            }
+
+            if (uploadedChunks.length === 0) {
+                logger.error(`file not exists: ${fileHash}`);
                 return res.json({ exists: false, code: "FILE_NOT_EXISTS", uploadedChunks: [] });
             }
 
-            if (fileRecord.status === "completed") {
-                logger.info(`File exists: ${fileRecord.path}`)
-                return res.json({ exists: true, code: "FILE_EXISTS", filePath: fileRecord.path, fileName: fileRecord.file_name });
-            }
-
-            logger.warn(`File not merged, uploaded ${fileRecord.uploaded_chunks.length}/${fileRecord.total_chunks} chunks`)
-
-            return res.json({
-                exists: false,
-                uploadedChunks: fileRecord.uploaded_chunks, code: "FILE_NOT_MERGED"
-            });
+            logger.warn(`File not merged, uploaded ${uploadedChunks.length} chunks`);
+            return res.json({ exists: false, code: "FILE_NOT_MERGED", uploadedChunks });
 
         } catch (err) {
             logger.error("Error checkFile:", err);

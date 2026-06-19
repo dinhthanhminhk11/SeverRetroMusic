@@ -16,11 +16,14 @@ const PORT = process.env.PORT || 3001;
 const key = process.env.KEY_128
 const iv = process.env.IV_128
 const path = require('path');
-// middlewares
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   max: 100,
-  message: "Too many requests, try again later."
+  message: "Too many requests, try again later.",
+  skip: (req) =>
+    req.path.includes('/upload-chunk') ||
+    req.path.includes('/check-file') ||
+    req.path.includes('/merge-file')
 });
 app.use(limiter);
 app.use(express.raw({ type: 'application/x-protobuf' }));
@@ -36,8 +39,8 @@ routerFiles.forEach((file) => {
   app.use('/api/v1', require(`./routes/${file}`).default);
 });
 
-const server = app.listen(PORT, () => {
-  console.info(`Server listening on port ${PORT}`);
+const server = app.listen(PORT, '0.0.0.0', () => {
+  console.info(`Server listening on 0.0.0.0:${PORT} (truy cập qua IP LAN, vd http://192.168.1.9:${PORT})`);
   addon.init(key, iv)
 });
 
